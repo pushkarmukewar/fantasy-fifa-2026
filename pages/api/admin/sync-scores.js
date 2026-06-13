@@ -50,8 +50,12 @@ const NAME_ALIASES = {
 function normalizeName(name) {
   return name
     .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove accents
-    .replace(/-/g, ' ')            // hyphens → spaces ("Gi-Hyuk" → "Gi Hyuk")
+    // Map special chars that don't decompose via NFD
+    .replace(/ø|ö/g, 'o').replace(/å/g, 'a').replace(/æ/g, 'ae')
+    .replace(/ı/g, 'i').replace(/ğ/g, 'g').replace(/ş/g, 's')
+    .replace(/ð/g, 'd').replace(/þ/g, 'th').replace(/ß/g, 'ss')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove remaining accents
+    .replace(/-/g, ' ')            // hyphens → spaces
     .replace(/[^a-z\s]/g, '')      // remove remaining non-alpha
     .replace(/\s+/g, ' ')          // collapse multiple spaces
     .trim()
