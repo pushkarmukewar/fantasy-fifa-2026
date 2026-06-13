@@ -58,10 +58,20 @@ const NAME_ALIASES = {
   'i. sergeev':    'igor sergeev',
   'e. shomurodov': 'eldor shomurodov',
   // Spain
-  'álex grimaldo': 'alejandro grimaldo',
-  'alex grimaldo': 'alejandro grimaldo',
-  'joan garcia':   'joan garcía',
-  'eric garcia':   'eric garcía',
+  'álex grimaldo':     'alejandro grimaldo',
+  'alex grimaldo':     'alejandro grimaldo',
+  // Australia
+  'a. o neill':        'oneill',
+  // Ghana
+  'a. baba':           'abdul baba rahman',
+  // Iran
+  'd. eckert ayensa':  'danial eckert',
+  'm. ghaedi':         'saman ghoddos',
+  // Norway
+  'h. falchener':      'håkon evjen',
+  // Turkey
+  'k. yildiz':         'kenan yıldız',
+  'b. yilmaz':         'burak yılmaz',
 }
 
 function normalizeName(name) {

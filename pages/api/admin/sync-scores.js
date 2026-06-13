@@ -43,8 +43,18 @@ const NAME_ALIASES = {
   // Spain
   'álex grimaldo':     'alejandro grimaldo',
   'alex grimaldo':     'alejandro grimaldo',
-  'joan garcia':       'joan garcía',
-  'eric garcia':       'eric garcía',
+  // Australia
+  'a. o neill':        'oneill',
+  // Ghana
+  'a. baba':           'abdul baba rahman',
+  // Iran
+  'd. eckert ayensa':  'danial eckert',
+  'm. ghaedi':         'saman ghoddos',
+  // Norway
+  'h. falchener':      'håkon evjen',
+  // Turkey
+  'k. yildiz':         'kenan yıldız',
+  'b. yilmaz':         'burak yılmaz',
 }
 
 function normalizeName(name) {
