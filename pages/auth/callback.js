@@ -11,6 +11,11 @@ export default function AuthCallback() {
   const router = useRouter()
 
   useEffect(() => {
+    // If already signed in (e.g. returning user clicking a new magic link), redirect immediately
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace('/dashboard')
+    })
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
         router.replace('/dashboard')
