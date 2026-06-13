@@ -37,9 +37,14 @@ async function apiFetch(path) {
 // ──────────────────────────────────────────
 const NAME_ALIASES = {
   // South Korea
-  'gi-hyuk lee':  'lee ki-hyuk',
-  'gihyuk lee':   'lee ki-hyuk',
-  'park jin-seop':'park jin-seob',
+  'gi-hyuk lee':       'lee ki-hyuk',
+  'gihyuk lee':        'lee ki-hyuk',
+  'park jin-seop':     'park jin-seob',
+  // Spain
+  'álex grimaldo':     'alejandro grimaldo',
+  'alex grimaldo':     'alejandro grimaldo',
+  'joan garcia':       'joan garcía',
+  'eric garcia':       'eric garcía',
 }
 
 function normalizeName(name) {
@@ -150,6 +155,7 @@ export default async function handler(req, res) {
     const { data: dbPlayersRaw, error: playersErr } = await supabase
       .from('players')
       .select('id, name, country, position')
+      .limit(2000)
 
     if (playersErr) {
       return res.status(500).json({ error: 'Failed to load players: ' + playersErr.message })

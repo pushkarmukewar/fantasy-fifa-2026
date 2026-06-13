@@ -56,6 +56,11 @@ const NAME_ALIASES = {
   'd. khamdamov':  'dostonbek khamdamov',
   'i. sergeev':    'igor sergeev',
   'e. shomurodov': 'eldor shomurodov',
+  // Spain
+  'álex grimaldo': 'alejandro grimaldo',
+  'alex grimaldo': 'alejandro grimaldo',
+  'joan garcia':   'joan garcía',
+  'eric garcia':   'eric garcía',
 }
 
 function normalizeName(name) {
@@ -147,6 +152,7 @@ export default async function handler(req, res) {
     const { data: dbPlayersRaw, error: playersErr } = await supabase
       .from('players')
       .select('id, name, country, position')
+      .limit(2000)
     if (playersErr) return res.status(500).json({ error: playersErr.message })
     const dbPlayers = dbPlayersRaw || []
 
