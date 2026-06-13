@@ -258,11 +258,6 @@ export default function LandingPage() {
                   Magic link sent to <span className="text-white font-medium">{email}</span>.
                   Click it to sign in and build your squad.
                 </p>
-                <p className="text-gray-600 text-xs mt-4">
-                  Local dev? Check{' '}
-                  <a href="http://localhost:54324" target="_blank" rel="noreferrer"
-                     className="text-yellow-400 underline">localhost:54324</a>
-                </p>
                 <button onClick={() => setSent(false)}
                   className="mt-6 text-sm text-gray-500 hover:text-white transition underline">
                   Use a different email
