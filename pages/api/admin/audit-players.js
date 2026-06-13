@@ -152,13 +152,19 @@ export default async function handler(req, res) {
     }
     // ──────────────────────────────────────────────────────────
 
-    // 1. Load all our DB players once
-    const { data: dbPlayersRaw, error: playersErr } = await supabase
-      .from('players')
-      .select('id, name, country, position')
-      .limit(2000)
-    if (playersErr) return res.status(500).json({ error: playersErr.message })
-    const dbPlayers = dbPlayersRaw || []
+    // 1. Load ALL DB players via pagination (Supabase caps at 1000/page)
+    const dbPlayers = []
+    const PAGE = 1000
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('players')
+        .select('id, name, country, position')
+        .range(from, from + PAGE - 1)
+      if (error) return res.status(500).json({ error: error.message })
+      if (!data || data.length === 0) break
+      dbPlayers.push(...data)
+      if (data.length < PAGE) break
+    }
 
     // 2. Get all WC teams
     const teamsData = await apiFetch(`/teams?league=${LEAGUE}&season=${SEASON}`)
@@ -219,6 +225,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       _debug,
       summary: {
+        dbPlayersLoaded: dbPlayers.length,
         teams: teams.length,
         totalApiPlayers: totalApi,
         totalMatched,
