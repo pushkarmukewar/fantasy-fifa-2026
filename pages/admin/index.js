@@ -12,6 +12,8 @@ export default function AdminPage() {
   const [users, setUsers]             = useState(null)
   const [usersLoading, setUsersLoading] = useState(false)
   const [removingId, setRemovingId]   = useState(null)
+  const [generatingLink, setGeneratingLink] = useState(null)
+  const [copiedEmail, setCopiedEmail] = useState(null)
   const [matchSyncing, setMatchSyncing] = useState(false)
   const [matchResult, setMatchResult]   = useState(null)
 
@@ -73,6 +75,25 @@ export default function AdminPage() {
       setUsers([])
     }
     setUsersLoading(false)
+  }
+
+  async function generateLink(email) {
+    setGeneratingLink(email)
+    try {
+      const res  = await fetch('/api/admin/generate-link?secret=supersecret123', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      await navigator.clipboard.writeText(data.link)
+      setCopiedEmail(email)
+      setTimeout(() => setCopiedEmail(null), 3000)
+    } catch (err) {
+      alert('Error generating link: ' + err.message)
+    }
+    setGeneratingLink(null)
   }
 
   async function removeUser(userId, email) {
@@ -328,7 +349,13 @@ export default function AdminPage() {
                             <td className="px-3 py-2.5 text-right text-xs text-gray-400">
                               {u.rank !== null ? `#${u.rank}` : <span className="text-gray-600">—</span>}
                             </td>
-                            <td className="px-3 py-2.5 text-right">
+                            <td className="px-3 py-2.5 text-right flex items-center justify-end gap-3">
+                              <button
+                                onClick={() => generateLink(u.email)}
+                                disabled={generatingLink === u.email}
+                                className="text-xs text-yellow-400 hover:text-yellow-300 disabled:opacity-50 transition">
+                                {generatingLink === u.email ? '…' : copiedEmail === u.email ? '✅ Copied!' : '🔗 Get Link'}
+                              </button>
                               <button
                                 onClick={() => removeUser(u.id, u.email)}
                                 disabled={removingId === u.id}
