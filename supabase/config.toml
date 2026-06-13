@@ -1,0 +1,9 @@
+project_id = "fantasy-fifa-2026"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed/players.sql"]
+
+[auth.email.template.magic_link]
+subject = "⚽ You're invited to Fantasy FIFA 2026!"
+content_path = "./supabase/templates/magic_link.html"

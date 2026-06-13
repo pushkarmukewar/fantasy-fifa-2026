@@ -1,0 +1,1 @@
+GRANT ALL ON matches TO anon, authenticated;
