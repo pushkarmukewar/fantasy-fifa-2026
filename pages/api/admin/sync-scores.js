@@ -166,19 +166,13 @@ export default async function handler(req, res) {
     }
 
     // Load all our players once
-    // Load ALL players via pagination (Supabase caps at 1000/page)
-    const dbPlayers = []
-    const PAGE = 1000
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase
-        .from('players')
-        .select('id, name, country, position')
-        .range(from, from + PAGE - 1)
-      if (error) return res.status(500).json({ error: 'Failed to load players: ' + error.message })
-      if (!data || data.length === 0) break
-      dbPlayers.push(...data)
-      if (data.length < PAGE) break
-    }
+    // Load ALL players in two explicit batches (handles Supabase 1000-row cap)
+    const [batch1, batch2] = await Promise.all([
+      supabase.from('players').select('id, name, country, position').range(0, 999),
+      supabase.from('players').select('id, name, country, position').range(1000, 1999),
+    ])
+    if (batch1.error) return res.status(500).json({ error: 'Failed to load players: ' + batch1.error.message })
+    const dbPlayers = [...(batch1.data || []), ...(batch2.data || [])]
 
     const results = []
 

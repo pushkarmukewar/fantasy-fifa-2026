@@ -163,12 +163,13 @@ export default async function handler(req, res) {
     }
     // ──────────────────────────────────────────────────────────
 
-    // 1. Load ALL DB players (service role bypasses row limits)
-    const { data: dbPlayers = [], error: playersErr } = await supabase
-      .from('players')
-      .select('id, name, country, position')
-      .limit(5000)
-    if (playersErr) return res.status(500).json({ error: playersErr.message })
+    // 1. Load ALL DB players in two explicit batches (handles Supabase 1000-row cap)
+    const [batch1, batch2] = await Promise.all([
+      supabase.from('players').select('id, name, country, position').range(0, 999),
+      supabase.from('players').select('id, name, country, position').range(1000, 1999),
+    ])
+    if (batch1.error) return res.status(500).json({ error: batch1.error.message })
+    const dbPlayers = [...(batch1.data || []), ...(batch2.data || [])]
 
     // 2. Get all WC teams
     const teamsData = await apiFetch(`/teams?league=${LEAGUE}&season=${SEASON}`)
