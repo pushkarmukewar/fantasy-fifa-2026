@@ -55,6 +55,14 @@ const NAME_ALIASES = {
   // Turkey
   'k. yildiz':         'kenan yıldız',
   'b. yilmaz':         'burak yılmaz',
+  // Iran
+  's. moghanlou':      'moghanloo',
+  // Tunisia
+  'c. abdelmouhib':    'chiheb abdelmoulib',
+  // Uzbekistan
+  'a. ganiev':         'azizjon ganiev',
+  // New Zealand
+  'n. pijnaaker':      'nikolas pijnaaker',
 }
 
 function normalizeName(name) {
