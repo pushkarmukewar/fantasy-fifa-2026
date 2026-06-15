@@ -11,11 +11,6 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-)
-
 const API_KEY  = process.env.API_FOOTBALL_KEY
 const BASE_URL = 'https://v3.football.api-sports.io'
 const LEAGUE   = 1        // FIFA World Cup
@@ -139,6 +134,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' })
   if (!API_KEY)
     return res.status(500).json({ error: 'API_FOOTBALL_KEY not set in .env.local' })
+
+  // Create inside handler so env vars are loaded; service role bypasses RLS for writes
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  )
 
   try {
     const specificFixture = req.query.fixtureId ? parseInt(req.query.fixtureId) : null
