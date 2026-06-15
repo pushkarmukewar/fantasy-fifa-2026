@@ -24,6 +24,17 @@ async function apiFetch(path) {
   return res.json()
 }
 
+// api-football team name → DB country name
+const COUNTRY_MAP = {
+  'Korea Republic':       'South Korea',
+  'USA':                  'United States',
+  'IR Iran':              'Iran',
+  'Côte d\'Ivoire':       'Ivory Coast',
+  'Cabo Verde':           'Cape Verde Islands',
+  'Bosnia & Herzegovina': 'Bosnia And Herzegovina',
+  'Türkiye':              'Turkey',
+}
+
 // ──────────────────────────────────────────
 // Manual aliases for players whose names have
 // different romanizations between api-football
@@ -214,6 +225,13 @@ export default async function handler(req, res) {
           const teamConceded = isHome ? awayScore : homeScore
           const cleanSheet = teamConceded === 0
 
+          // Only search players from this team's country — eliminates cross-country collisions
+          const apiCountry    = team.team.name
+          const dbCountry     = COUNTRY_MAP[apiCountry] || apiCountry
+          const countryPlayers = dbPlayers.filter(
+            d => d.country.toLowerCase() === dbCountry.toLowerCase()
+          )
+
           for (const playerEntry of team.players) {
             const p = playerEntry.player
             const s = playerEntry.statistics?.[0]
@@ -229,10 +247,10 @@ export default async function handler(req, res) {
             const yellowCards = s.cards?.yellow || 0
             const redCards    = (s.cards?.red || 0) + (s.cards?.yellowred || 0)
 
-            // Check alias table first, then fuzzy match
+            // Check alias table first, then fuzzy match within country only
             const apiLower   = p.name.toLowerCase()
             const aliasedDb  = NAME_ALIASES[apiLower]
-            const dbPlayer   = dbPlayers.find(d =>
+            const dbPlayer   = countryPlayers.find(d =>
               aliasedDb
                 ? d.name.toLowerCase() === aliasedDb
                 : namesMatch(d.name, p.name)
