@@ -166,8 +166,9 @@ export default async function handler(req, res) {
       .in('api_fixture_id', fixtureIds)
 
     const syncedIds = new Set((alreadySynced || []).map(r => r.api_fixture_id))
-    const toSync = specificFixture
-      ? fixtureIds  // always re-sync if explicitly requested
+    const force = req.query.force === 'true'
+    const toSync = (specificFixture || force)
+      ? fixtureIds  // always re-sync if explicitly requested or force=true
       : fixtureIds.filter(id => !syncedIds.has(id))
 
     if (toSync.length === 0) {
