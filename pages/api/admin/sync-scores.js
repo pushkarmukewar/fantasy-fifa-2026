@@ -125,10 +125,10 @@ function namesMatch(dbName, apiName) {
   // Partial: one name fully contained in the other
   if (api.includes(db) || db.includes(api)) return true
 
-  // Any word overlap of 5+ chars (handles hyphenated names)
-  const dbWords  = dbParts.filter(w => w.length >= 5)
-  const apiWords = apiParts.filter(w => w.length >= 5)
-  if (dbWords.length > 0 && dbWords.some(w => apiWords.includes(w))) return true
+  // Last-word overlap of 5+ chars (handles hyphenated surnames only, not first names)
+  const dbLastWord  = dbParts[dbParts.length - 1]
+  const apiLastWord = apiParts[apiParts.length - 1]
+  if (dbLastWord.length >= 5 && dbLastWord === apiLastWord) return true
 
   // Spaceless compare: "jo hyeonwoo" ↔ "jo hyeon woo"
   // Strip all spaces and compare the full concatenated string
