@@ -74,23 +74,16 @@ export default function DashboardPage() {
         const teamPlayers = teamData.fantasy_team_players.map(r => r.players)
         setPlayers(teamPlayers)
 
-        // Total points for each player
-        const playerIds = teamPlayers.map(p => p.id)
-        const { data: pointsData } = await supabase
-          .from('player_points')
-          .select('player_id, points')
-          .in('player_id', playerIds)
-
-        const pts = (pointsData || []).reduce((sum, r) => sum + r.points, 0)
-        setTotalPts(pts)
-
-        // Get rank from leaderboard view
+        // Get total points + rank from leaderboard view (handles captain 2× correctly)
         const { data: lb } = await supabase
           .from('leaderboard')
-          .select('rank')
+          .select('total_points, rank')
           .eq('user_id', session.user.id)
           .single()
-        if (lb) setRank(lb.rank)
+        if (lb) {
+          setTotalPts(lb.total_points)
+          setRank(lb.rank)
+        }
       }
 
       setLoading(false)
