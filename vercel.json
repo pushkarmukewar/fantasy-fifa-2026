@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "pages/api/admin/sync-scores.js": {
+      "maxDuration": 300
+    }
+  }
+}
