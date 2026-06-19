@@ -28,16 +28,13 @@ export default function DashboardPage() {
 
       const { data: teamData } = await supabase
         .from('fantasy_teams')
-        .select('id, name, locked, fantasy_team_players(joined_at, players(*))')
+        .select('id, name, locked, fantasy_team_players(players(*))')
         .eq('user_id', session.user.id)
         .single()
 
       if (teamData) {
         setTeam(teamData)
-        const teamPlayers = teamData.fantasy_team_players.map(r => ({
-          ...r.players,
-          joinedAt: r.joined_at,
-        }))
+        const teamPlayers = teamData.fantasy_team_players.map(r => r.players)
         setPlayers(teamPlayers)
 
         const { data: lb } = await supabase
