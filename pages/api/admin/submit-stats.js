@@ -2,7 +2,7 @@
  * POST /api/admin/submit-stats
  *
  * Body: {
- *   secret: string,         // must match ADMIN_SECRET env var
+ *   secret: string,
  *   match_id: string,
  *   stats: [
  *     {
@@ -17,15 +17,11 @@
  *     }
  *   ]
  * }
- *
- * Creates/updates player_match_stats rows,
- * then (re)calculates and upserts player_points rows.
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { calculatePoints } from '../../../lib/points'
 
-// Use service role key so we can bypass RLS for admin writes
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -36,7 +32,6 @@ export default async function handler(req, res) {
 
   const { secret, match_id, stats } = req.body
 
-  // Auth check
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
@@ -46,15 +41,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch player positions in one query
+    // Fetch player positions
     const playerIds = stats.map(s => s.player_id)
     const { data: playerData, error: pErr } = await supabase
       .from('players')
       .select('id, position')
       .in('id', playerIds)
-
     if (pErr) throw pErr
     const posMap = Object.fromEntries(playerData.map(p => [p.id, p.position]))
+
+    // Fetch match date so points can be date-gated correctly
+    const { data: matchData } = await supabase
+      .from('matches')
+      .select('match_date')
+      .eq('id', match_id)
+      .single()
+    const matchDate = matchData?.match_date || null
+
+    // FIX: fetch all captains so we can apply 2x multiplier
+    const { data: captainRows } = await supabase
+      .from('fantasy_team_players')
+      .select('player_id')
+      .eq('is_captain', true)
+    const captainIds = new Set((captainRows || []).map(r => r.player_id))
 
     const statsRows  = []
     const pointsRows = []
@@ -66,6 +75,7 @@ export default async function handler(req, res) {
       statsRows.push({
         player_id:      s.player_id,
         match_id,
+        match_date:     matchDate,
         minutes_played: s.minutes_played ?? 0,
         goals:          s.goals ?? 0,
         assists:        s.assists ?? 0,
@@ -75,12 +85,18 @@ export default async function handler(req, res) {
         own_goals:      s.own_goals ?? 0,
       })
 
+      const isCaptain = captainIds.has(s.player_id)
       const { total, breakdown } = calculatePoints(s, position)
+
+      // FIX: apply 2x multiplier for captain
+      const finalPoints = isCaptain ? total * 2 : total
+
       pointsRows.push({
-        player_id: s.player_id,
+        player_id:      s.player_id,
         match_id,
-        points:    total,
-        breakdown,
+        points:         finalPoints,
+        breakdown:      { ...breakdown, is_captain: isCaptain },
+        is_captain_pts: isCaptain,
       })
     }
 
@@ -102,7 +118,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       processed: statsRows.length,
-      points: pointsRows.map(r => ({ player_id: r.player_id, points: r.points }))
+      points: pointsRows.map(r => ({ player_id: r.player_id, points: r.points, is_captain: r.is_captain_pts }))
     })
 
   } catch (err) {
