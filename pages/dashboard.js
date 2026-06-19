@@ -16,7 +16,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser]         = useState(null)
   const [team, setTeam]         = useState(null)
-  const [players, setPlayers]   = useState([])
+  const [players, setPlayers]   = useState([])  // now includes joinedAt per player
   const [totalPts, setTotalPts] = useState(0)
   const [rank, setRank]         = useState(null)
   const [loading, setLoading]   = useState(true)
@@ -38,7 +38,6 @@ export default function DashboardPage() {
         if (d === 0) setCountdown('Opens today!')
         else if (d === 1) setCountdown('Opens tomorrow')
         else {
-          // Live HH:MM:SS countdown to start of next window
           const target = new Date(next.start + 'T00:00:00')
           const diff = target - new Date()
           if (diff > 0) {
@@ -62,19 +61,22 @@ export default function DashboardPage() {
       if (!session) { router.replace('/'); return }
       setUser(session.user)
 
-      // Load user's team + players
+      // FIX: also select joined_at so we can filter per-player points correctly
       const { data: teamData } = await supabase
         .from('fantasy_teams')
-        .select('id, name, locked, fantasy_team_players(players(*))')
+        .select('id, name, locked, fantasy_team_players(joined_at, players(*))')
         .eq('user_id', session.user.id)
         .single()
 
       if (teamData) {
         setTeam(teamData)
-        const teamPlayers = teamData.fantasy_team_players.map(r => r.players)
+        // FIX: attach joined_at to each player object
+        const teamPlayers = teamData.fantasy_team_players.map(r => ({
+          ...r.players,
+          joinedAt: r.joined_at,
+        }))
         setPlayers(teamPlayers)
 
-        // Get total points + rank from leaderboard view (handles captain 2× correctly)
         const { data: lb } = await supabase
           .from('leaderboard')
           .select('total_points, rank')
@@ -171,7 +173,10 @@ export default function DashboardPage() {
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {players.map(player => <PlayerPointsCard key={player.id} player={player} />)}
+              {/* FIX: pass joinedAt so the card only counts points after the player joined */}
+              {players.map(player => (
+                <PlayerPointsCard key={player.id} player={player} joinedAt={player.joinedAt} />
+              ))}
             </div>
           </>
         )}
@@ -187,19 +192,44 @@ export default function DashboardPage() {
   )
 }
 
-function PlayerPointsCard({ player }) {
+function PlayerPointsCard({ player, joinedAt }) {
   const [pts, setPts] = useState(null)
 
   useEffect(() => {
-    supabase
-      .from('player_points')
-      .select('points')
-      .eq('player_id', player.id)
-      .then(({ data }) => {
-        const total = (data || []).reduce((s, r) => s + r.points, 0)
-        setPts(total)
-      })
-  }, [player.id])
+    async function fetchPoints() {
+      // Get all points rows for this player
+      const { data: pointsData } = await supabase
+        .from('player_points')
+        .select('points, api_fixture_id')
+        .eq('player_id', player.id)
+
+      if (!pointsData?.length) { setPts(0); return }
+
+      // FIX: also fetch match dates so we can exclude pre-transfer matches
+      const { data: statsData } = await supabase
+        .from('player_match_stats')
+        .select('api_fixture_id, match_date')
+        .eq('player_id', player.id)
+
+      const statsMap = Object.fromEntries(
+        (statsData || []).map(s => [String(s.api_fixture_id), s.match_date])
+      )
+
+      const joinedDate = joinedAt ? joinedAt.split('T')[0] : null
+
+      const total = pointsData.reduce((sum, r) => {
+        const matchDate = statsMap[String(r.api_fixture_id)]
+        // Include if: no match date (old data), no join date, or match happened on/after joined date
+        if (!matchDate || !joinedDate || matchDate >= joinedDate) {
+          return sum + r.points
+        }
+        return sum
+      }, 0)
+
+      setPts(total)
+    }
+    fetchPoints()
+  }, [player.id, joinedAt])
 
   return (
     <div className={`border rounded-xl p-4 ${POSITION_COLORS[player.position]}`}>
