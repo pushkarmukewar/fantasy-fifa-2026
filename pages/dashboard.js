@@ -3,7 +3,6 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../lib/supabase'
 import Navbar from '../components/Navbar'
-import { getOpenWindow, getNextWindow, countdownToEndOf, daysUntil } from '../lib/transferWindows'
 
 const POSITION_COLORS = {
   GK:  'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
@@ -16,44 +15,10 @@ export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser]         = useState(null)
   const [team, setTeam]         = useState(null)
-  const [players, setPlayers]   = useState([])  // now includes joinedAt per player
+  const [players, setPlayers]   = useState([])
   const [totalPts, setTotalPts] = useState(0)
   const [rank, setRank]         = useState(null)
   const [loading, setLoading]   = useState(true)
-  const [openWindow, setOpenWindow] = useState(null)
-  const [nextWindow, setNextWindow] = useState(null)
-  const [countdown, setCountdown]   = useState('')
-
-  // Live transfer window countdown
-  useEffect(() => {
-    function tick() {
-      const open = getOpenWindow()
-      const next = getNextWindow()
-      setOpenWindow(open)
-      setNextWindow(next)
-      if (open) {
-        setCountdown(countdownToEndOf(open.end))
-      } else if (next) {
-        const d = daysUntil(next.start)
-        if (d === 0) setCountdown('Opens today!')
-        else if (d === 1) setCountdown('Opens tomorrow')
-        else {
-          const target = new Date(next.start + 'T00:00:00')
-          const diff = target - new Date()
-          if (diff > 0) {
-            const days = Math.floor(diff / 86400000)
-            const h = Math.floor((diff % 86400000) / 3600000).toString().padStart(2,'0')
-            const m = Math.floor((diff % 3600000) / 60000).toString().padStart(2,'0')
-            const s = Math.floor((diff % 60000) / 1000).toString().padStart(2,'0')
-            setCountdown(days > 0 ? `${days}d ${h}:${m}:${s}` : `${h}:${m}:${s}`)
-          }
-        }
-      }
-    }
-    tick()
-    const interval = setInterval(tick, 1000)
-    return () => clearInterval(interval)
-  }, [])
 
   useEffect(() => {
     async function init() {
@@ -61,7 +26,6 @@ export default function DashboardPage() {
       if (!session) { router.replace('/'); return }
       setUser(session.user)
 
-      // FIX: also select joined_at so we can filter per-player points correctly
       const { data: teamData } = await supabase
         .from('fantasy_teams')
         .select('id, name, locked, fantasy_team_players(joined_at, players(*))')
@@ -70,7 +34,6 @@ export default function DashboardPage() {
 
       if (teamData) {
         setTeam(teamData)
-        // FIX: attach joined_at to each player object
         const teamPlayers = teamData.fantasy_team_players.map(r => ({
           ...r.players,
           joinedAt: r.joined_at,
@@ -130,32 +93,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Transfer window countdown */}
-        {openWindow ? (
-          <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-5 mb-8 flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <p className="text-green-400 font-black text-sm uppercase tracking-wide mb-0.5">🟢 Transfer Window Open</p>
-              <p className="text-gray-300 text-sm">{openWindow.label} — make your changes now</p>
-            </div>
-            <div className="text-right">
-              <p className="text-gray-500 text-xs mb-0.5">Closes in</p>
-              <p className="text-green-400 font-black text-3xl tabular-nums">{countdown}</p>
-            </div>
-          </div>
-        ) : nextWindow ? (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-8 flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <p className="text-yellow-400 font-black text-sm uppercase tracking-wide mb-0.5">🔒 Next Transfer Window</p>
-              <p className="text-gray-300 text-sm">{nextWindow.label}</p>
-              <p className="text-gray-500 text-xs mt-0.5">{nextWindow.start} → {nextWindow.end}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-gray-500 text-xs mb-0.5">Opens in</p>
-              <p className="text-yellow-400 font-black text-3xl tabular-nums">{countdown}</p>
-            </div>
-          </div>
-        ) : null}
-
         {/* My team */}
         {players.length === 0 ? (
           <div className="card text-center py-12">
@@ -168,12 +105,9 @@ export default function DashboardPage() {
           <>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">{team?.name}</h2>
-              {!team?.locked && (
-                <Link href="/team" className="btn-secondary text-sm">Edit team</Link>
-              )}
+              <span className="text-yellow-400 text-sm">🔒 Locked</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {/* FIX: pass joinedAt so the card only counts points after the player joined */}
               {players.map(player => (
                 <PlayerPointsCard key={player.id} player={player} joinedAt={player.joinedAt} />
               ))}
@@ -197,7 +131,6 @@ function PlayerPointsCard({ player, joinedAt }) {
 
   useEffect(() => {
     async function fetchPoints() {
-      // Get all points rows for this player
       const { data: pointsData } = await supabase
         .from('player_points')
         .select('points, api_fixture_id')
@@ -205,7 +138,6 @@ function PlayerPointsCard({ player, joinedAt }) {
 
       if (!pointsData?.length) { setPts(0); return }
 
-      // FIX: also fetch match dates so we can exclude pre-transfer matches
       const { data: statsData } = await supabase
         .from('player_match_stats')
         .select('api_fixture_id, match_date')
@@ -219,7 +151,6 @@ function PlayerPointsCard({ player, joinedAt }) {
 
       const total = pointsData.reduce((sum, r) => {
         const matchDate = statsMap[String(r.api_fixture_id)]
-        // Include if: no match date (old data), no join date, or match happened on/after joined date
         if (!matchDate || !joinedDate || matchDate >= joinedDate) {
           return sum + r.points
         }
