@@ -3,9 +3,6 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import Navbar from '../components/Navbar'
 import PlayerCard from '../components/PlayerCard'
-import {
-  getOpenWindow, getNextWindow, daysUntil, countdownToEndOf
-} from '../lib/transferWindows'
 
 const BUDGET = 50
 const MAX_PLAYERS = 5
@@ -23,7 +20,7 @@ export default function TeamPage() {
   const [user, setUser]               = useState(null)
   const [players, setPlayers]         = useState([])
   const [selected, setSelected]       = useState([])
-  const [captainId, setCaptainId]     = useState(null)   // player id of captain
+  const [captainId, setCaptainId]     = useState(null)
   const [teamId, setTeamId]           = useState(null)
   const [search, setSearch]           = useState('')
   const [posFilter, setPosFilter]     = useState('All')
@@ -32,29 +29,7 @@ export default function TeamPage() {
   const [saved, setSaved]             = useState(false)
   const [locked, setLocked]           = useState(false)
   const [loading, setLoading]         = useState(true)
-  const [openWindow, setOpenWindow]   = useState(null)
-  const [nextWindow, setNextWindow]   = useState(null)
-  const [countdown, setCountdown]     = useState('')
   const [hasTeam, setHasTeam]         = useState(false)
-
-  // Live countdown ticker
-  useEffect(() => {
-    function tick() {
-      const open = getOpenWindow()
-      const next = getNextWindow()
-      setOpenWindow(open)
-      setNextWindow(next)
-      if (open) {
-        setCountdown(countdownToEndOf(open.end))
-      } else if (next) {
-        const d = daysUntil(next.start)
-        setCountdown(d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`)
-      }
-    }
-    tick()
-    const interval = setInterval(tick, 1000)
-    return () => clearInterval(interval)
-  }, [])
 
   useEffect(() => {
     async function init() {
@@ -76,7 +51,7 @@ export default function TeamPage() {
         .single()
 
       if (teamData) {
-        setLocked(teamData.locked)
+        setLocked(true)   // team always locked once saved
         setHasTeam(true)
         setTeamId(teamData.id)
         const rows = teamData.fantasy_team_players
@@ -92,14 +67,13 @@ export default function TeamPage() {
     init()
   }, [])
 
-  const spent      = selected.reduce((sum, p) => sum + p.price / 1000000, 0)
-  const remaining  = BUDGET - spent
-  const budgetOk   = remaining >= 0
-  const windowOpen = !!openWindow || !hasTeam
-  const canSave    = selected.length === MAX_PLAYERS && budgetOk && !locked && windowOpen && !!captainId
+  const spent     = selected.reduce((sum, p) => sum + p.price / 1000000, 0)
+  const remaining = BUDGET - spent
+  const budgetOk  = remaining >= 0
+  const canSave   = selected.length === MAX_PLAYERS && budgetOk && !hasTeam && !!captainId
 
   function togglePlayer(player) {
-    if (locked || !windowOpen) return
+    if (locked || hasTeam) return
     const isIn = selected.find(p => p.id === player.id)
     if (isIn) {
       setSelected(selected.filter(p => p.id !== player.id))
@@ -111,7 +85,7 @@ export default function TeamPage() {
   }
 
   function toggleCaptain(playerId) {
-    if (locked || !windowOpen) return
+    if (locked || hasTeam) return
     setCaptainId(prev => prev === playerId ? null : playerId)
   }
 
@@ -129,52 +103,19 @@ export default function TeamPage() {
 
       if (teamErr) throw teamErr
 
-      // Fetch existing players with their join dates
-      const { data: existing } = await supabase
-        .from('fantasy_team_players')
-        .select('player_id, joined_at')
-        .eq('fantasy_team_id', team.id)
-
-      const existingMap = Object.fromEntries((existing || []).map(r => [r.player_id, r.joined_at]))
-      const selectedIds = new Set(selected.map(p => p.id))
-      const existingIds = new Set(Object.keys(existingMap))
-
-      // Remove players no longer in the squad
-      const toRemove = [...existingIds].filter(id => !selectedIds.has(id))
-      if (toRemove.length) {
-        await supabase
-          .from('fantasy_team_players')
-          .delete()
-          .eq('fantasy_team_id', team.id)
-          .in('player_id', toRemove)
-      }
-
-      // Insert only newly added players
-      const toAdd = selected.filter(p => !existingIds.has(p.id))
-      if (toAdd.length) {
-        await supabase.from('fantasy_team_players').insert(
-          toAdd.map(p => ({
-            fantasy_team_id: team.id,
-            player_id: p.id,
-            is_captain: p.id === captainId,
-            joined_at: new Date().toISOString(),
-          }))
-        )
-      }
-
-      // Update captain flag for retained players
-      for (const p of selected) {
-        if (existingIds.has(p.id)) {
-          await supabase
-            .from('fantasy_team_players')
-            .update({ is_captain: p.id === captainId })
-            .eq('fantasy_team_id', team.id)
-            .eq('player_id', p.id)
-        }
-      }
+      await supabase.from('fantasy_team_players').delete().eq('fantasy_team_id', team.id)
+      await supabase.from('fantasy_team_players').insert(
+        selected.map(p => ({
+          fantasy_team_id: team.id,
+          player_id: p.id,
+          is_captain: p.id === captainId,
+          joined_at: new Date().toISOString(),
+        }))
+      )
 
       setTeamId(team.id)
       setHasTeam(true)
+      setLocked(true)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
@@ -203,49 +144,21 @@ export default function TeamPage() {
     <div className="min-h-screen">
       <Navbar user={user} />
 
-      {/* Transfer window banner */}
-      {openWindow ? (
-        <div className="bg-green-500/15 border-b border-green-500/30 px-4 py-3">
-          <div className="max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-green-400 text-lg">🟢</span>
-              <div>
-                <span className="text-green-400 font-bold text-sm">Transfer Window Open</span>
-                <span className="text-gray-400 text-sm ml-2">— {openWindow.label}</span>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-gray-400 text-xs">Closes in</p>
-              <p className="text-green-400 font-black text-lg tabular-nums">{countdown}</p>
-            </div>
-          </div>
-        </div>
-      ) : !hasTeam ? (
-        <div className="bg-blue-500/15 border-b border-blue-500/30 px-4 py-3">
+      {/* Banner */}
+      {hasTeam ? (
+        <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-4 py-3">
           <div className="max-w-6xl mx-auto flex items-center gap-2">
-            <span className="text-blue-400 text-lg">🔵</span>
-            <span className="text-blue-400 font-bold text-sm">Welcome!</span>
-            <span className="text-gray-400 text-sm">Build your team now — once saved, you can only change it during transfer windows.</span>
+            <span className="text-yellow-400 text-lg">🔒</span>
+            <span className="text-yellow-400 font-bold text-sm">Team locked</span>
+            <span className="text-gray-400 text-sm">— your squad is set for the tournament. No changes allowed.</span>
           </div>
         </div>
       ) : (
-        <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-3">
-          <div className="max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-red-400 text-lg">🔴</span>
-              <div>
-                <span className="text-red-400 font-bold text-sm">Transfer Window Closed</span>
-                {nextWindow && (
-                  <span className="text-gray-400 text-sm ml-2">— {nextWindow.label} opens {nextWindow.start}</span>
-                )}
-              </div>
-            </div>
-            {nextWindow && (
-              <div className="text-right">
-                <p className="text-gray-400 text-xs">Next window</p>
-                <p className="text-yellow-400 font-bold text-sm">{countdown}</p>
-              </div>
-            )}
+        <div className="bg-blue-500/15 border-b border-blue-500/30 px-4 py-3">
+          <div className="max-w-6xl mx-auto flex items-center gap-2">
+            <span className="text-blue-400 text-lg">🔵</span>
+            <span className="text-blue-400 font-bold text-sm">Build your team</span>
+            <span className="text-gray-400 text-sm">— once saved, your squad is locked for the entire tournament.</span>
           </div>
         </div>
       )}
@@ -295,7 +208,7 @@ export default function TeamPage() {
                   player={player}
                   selected={!!selected.find(p => p.id === player.id)}
                   onToggle={togglePlayer}
-                  disabled={selected.length >= MAX_PLAYERS && !selected.find(p => p.id === player.id)}
+                  disabled={hasTeam || (selected.length >= MAX_PLAYERS && !selected.find(p => p.id === player.id))}
                 />
               ))}
             </div>
@@ -306,8 +219,8 @@ export default function TeamPage() {
             <div className="card sticky top-20">
               <h2 className="text-lg font-bold mb-1">My Squad</h2>
 
-              {/* Captain rule — always visible while editing */}
-              {windowOpen && !locked && (
+              {/* Captain rule — only shown before team is saved */}
+              {!hasTeam && (
                 <div className="flex items-start gap-2 bg-yellow-400/10 border border-yellow-400/30 rounded-lg px-3 py-2 mb-4">
                   <span className="text-yellow-400 text-base leading-none mt-0.5">⭐</span>
                   <p className="text-xs text-yellow-300 leading-snug">
@@ -348,16 +261,15 @@ export default function TeamPage() {
                       {p ? (
                         <>
                           <div className="flex items-center gap-2 min-w-0">
-                            {/* Captain badge */}
                             <button
                               onClick={() => toggleCaptain(p.id)}
-                              disabled={locked || !windowOpen}
+                              disabled={hasTeam}
                               title={isCap ? 'Remove captain' : 'Make captain'}
                               className={`shrink-0 w-5 h-5 rounded text-xs font-black flex items-center justify-center transition ${
                                 isCap
                                   ? 'bg-yellow-400 text-gray-900'
                                   : 'bg-white/20 text-gray-500 hover:bg-yellow-400/40 hover:text-yellow-300'
-                              } ${(locked || !windowOpen) ? 'cursor-default opacity-50' : 'cursor-pointer'}`}>
+                              } ${hasTeam ? 'cursor-default opacity-50' : 'cursor-pointer'}`}>
                               C
                             </button>
                             <div className="min-w-0">
@@ -367,7 +279,7 @@ export default function TeamPage() {
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-fifa-gold text-xs">${(p.price / 1000000).toFixed(0)}M</span>
-                            {!locked && windowOpen && (
+                            {!hasTeam && (
                               <button onClick={() => togglePlayer(p)}
                                 className="text-gray-500 hover:text-red-400 text-xs transition">
                                 ✕
@@ -388,36 +300,26 @@ export default function TeamPage() {
                 <p className="text-xs text-center text-green-400 mb-3">
                   ✅ Captain: <span className="font-bold">{selected.find(p => p.id === captainId).name}</span> (2× points)
                 </p>
-              ) : windowOpen && !locked && selected.length > 0 && (
+              ) : !hasTeam && selected.length > 0 && (
                 <p className="text-xs text-center text-yellow-400 mb-3 animate-pulse">
                   ⚠️ No captain selected — required to save
                 </p>
               )}
 
-              {locked ? (
+              {hasTeam ? (
                 <div className="text-center text-sm text-yellow-400 bg-yellow-400/10 rounded-lg p-3">
-                  🔒 Team locked — tournament has started
-                </div>
-              ) : !windowOpen ? (
-                <div className="text-center text-sm bg-white/5 border border-white/10 rounded-lg p-3 space-y-1">
-                  <p className="text-red-400 font-bold">🔴 Window closed</p>
-                  {nextWindow && (
-                    <p className="text-gray-400 text-xs">
-                      Next: <span className="text-yellow-400">{nextWindow.label}</span><br />
-                      Opens {nextWindow.start} · <span className="font-mono">{countdown}</span>
-                    </p>
-                  )}
+                  🔒 Squad locked for the tournament
                 </div>
               ) : (
                 <button
                   onClick={saveTeam}
                   disabled={!canSave || saving}
                   className="btn-primary w-full">
-                  {saving ? 'Saving…' : saved ? '✓ Saved!' : selected.length === MAX_PLAYERS && !captainId ? '⭐ Pick a captain first' : 'Save Team'}
+                  {saving ? 'Saving…' : saved ? '✓ Saved!' : !captainId && selected.length === MAX_PLAYERS ? '⭐ Pick a captain first' : 'Save Team'}
                 </button>
               )}
 
-              {selected.length < MAX_PLAYERS && !locked && (
+              {!hasTeam && selected.length < MAX_PLAYERS && (
                 <p className="text-xs text-center text-gray-500 mt-2">
                   Pick {MAX_PLAYERS - selected.length} more player{MAX_PLAYERS - selected.length !== 1 ? 's' : ''}
                 </p>
