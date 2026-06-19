@@ -13,12 +13,13 @@ const POSITION_COLORS = {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [user, setUser]         = useState(null)
-  const [team, setTeam]         = useState(null)
-  const [players, setPlayers]   = useState([])
-  const [totalPts, setTotalPts] = useState(0)
-  const [rank, setRank]         = useState(null)
-  const [loading, setLoading]   = useState(true)
+  const [user, setUser]           = useState(null)
+  const [team, setTeam]           = useState(null)
+  const [players, setPlayers]     = useState([])
+  const [pointsMap, setPointsMap] = useState({})   // player_id → total points
+  const [totalPts, setTotalPts]   = useState(0)
+  const [rank, setRank]           = useState(null)
+  const [loading, setLoading]     = useState(true)
 
   useEffect(() => {
     async function init() {
@@ -26,16 +27,40 @@ export default function DashboardPage() {
       if (!session) { router.replace('/'); return }
       setUser(session.user)
 
-      const { data: teamData } = await supabase
+      const { data: teamData, error: teamErr } = await supabase
         .from('fantasy_teams')
         .select('id, name, locked, fantasy_team_players(players(*))')
         .eq('user_id', session.user.id)
         .single()
 
+      if (teamErr) console.error('team fetch error:', teamErr)
+
       if (teamData) {
         setTeam(teamData)
-        const teamPlayers = teamData.fantasy_team_players.map(r => r.players)
+        const teamPlayers = teamData.fantasy_team_players.map(r => r.players).filter(Boolean)
         setPlayers(teamPlayers)
+
+        // Fetch ALL points for this team's players in ONE query
+        const playerIds = teamPlayers.map(p => p.id)
+        if (playerIds.length > 0) {
+          const { data: pointsRows, error: ptsErr } = await supabase
+            .from('player_points')
+            .select('player_id, points')
+            .in('player_id', playerIds)
+
+          if (ptsErr) {
+            console.error('player_points fetch error:', ptsErr)
+          } else {
+            console.log('player_points rows fetched:', pointsRows?.length, pointsRows)
+          }
+
+          // Sum per player
+          const map = {}
+          for (const row of (pointsRows || [])) {
+            map[row.player_id] = (map[row.player_id] || 0) + (row.points || 0)
+          }
+          setPointsMap(map)
+        }
 
         const { data: lb } = await supabase
           .from('leaderboard')
@@ -106,7 +131,7 @@ export default function DashboardPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {players.map(player => (
-                <PlayerPointsCard key={player.id} player={player} />
+                <PlayerPointsCard key={player.id} player={player} pts={pointsMap[player.id] ?? null} />
               ))}
             </div>
           </>
@@ -123,21 +148,7 @@ export default function DashboardPage() {
   )
 }
 
-function PlayerPointsCard({ player }) {
-  const [pts, setPts] = useState(null)
-
-  useEffect(() => {
-    supabase
-      .from('player_points')
-      .select('points')
-      .eq('player_id', player.id)
-      .then(({ data, error }) => {
-        if (error) console.error('points fetch error:', error)
-        const total = (data || []).reduce((s, r) => s + r.points, 0)
-        setPts(total)
-      })
-  }, [player.id])
-
+function PlayerPointsCard({ player, pts }) {
   return (
     <div className={`border rounded-xl p-4 ${POSITION_COLORS[player.position]}`}>
       <div className="flex items-start justify-between">
