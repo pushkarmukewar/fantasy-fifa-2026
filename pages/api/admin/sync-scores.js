@@ -172,14 +172,6 @@ export default async function handler(req, res) {
     if (batch1.error) return res.status(500).json({ error: 'Failed to load players: ' + batch1.error.message })
     const dbPlayers = [...(batch1.data || []), ...(batch2.data || [])]
 
-    // Pre-load all captain player_ids ONCE — lets us apply 2x in a single pass,
-    // no second pass means no risk of Vercel timeout cutting off the captain step
-    const { data: captainRows } = await supabase
-      .from('fantasy_team_players')
-      .select('player_id')
-      .eq('is_captain', true)
-    const captainIds = new Set((captainRows || []).map(r => r.player_id))
-
     const results = []
 
     for (const fixtureId of toSync) {
@@ -259,12 +251,12 @@ export default async function handler(req, res) {
             if (error) {
               upsertErrors.push(`${dbPlayer.name}: ${error.message}`)
             } else {
-              // Captain 2x applied in the SAME call — no second pass needed
-              const isCaptain = captainIds.has(dbPlayer.id)
+              // Always store raw (non-captain) points — 2x is applied at query time
+              // per team, so the same player can be captain in one team and not another
               await supabase.rpc('calculate_fantasy_points', {
                 p_player_id:  dbPlayer.id,
                 p_fixture_id: fixtureId,
-                p_is_captain: isCaptain,
+                p_is_captain: false,
               })
               matchedCount++
             }
