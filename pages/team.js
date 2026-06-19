@@ -129,14 +129,49 @@ export default function TeamPage() {
 
       if (teamErr) throw teamErr
 
-      await supabase.from('fantasy_team_players').delete().eq('fantasy_team_id', team.id)
-      await supabase.from('fantasy_team_players').insert(
-        selected.map(p => ({
-          fantasy_team_id: team.id,
-          player_id: p.id,
-          is_captain: p.id === captainId,
-        }))
-      )
+      // Fetch existing players with their join dates
+      const { data: existing } = await supabase
+        .from('fantasy_team_players')
+        .select('player_id, joined_at')
+        .eq('fantasy_team_id', team.id)
+
+      const existingMap = Object.fromEntries((existing || []).map(r => [r.player_id, r.joined_at]))
+      const selectedIds = new Set(selected.map(p => p.id))
+      const existingIds = new Set(Object.keys(existingMap))
+
+      // Remove players no longer in the squad
+      const toRemove = [...existingIds].filter(id => !selectedIds.has(id))
+      if (toRemove.length) {
+        await supabase
+          .from('fantasy_team_players')
+          .delete()
+          .eq('fantasy_team_id', team.id)
+          .in('player_id', toRemove)
+      }
+
+      // Insert only newly added players
+      const toAdd = selected.filter(p => !existingIds.has(p.id))
+      if (toAdd.length) {
+        await supabase.from('fantasy_team_players').insert(
+          toAdd.map(p => ({
+            fantasy_team_id: team.id,
+            player_id: p.id,
+            is_captain: p.id === captainId,
+            joined_at: new Date().toISOString(),
+          }))
+        )
+      }
+
+      // Update captain flag for retained players
+      for (const p of selected) {
+        if (existingIds.has(p.id)) {
+          await supabase
+            .from('fantasy_team_players')
+            .update({ is_captain: p.id === captainId })
+            .eq('fantasy_team_id', team.id)
+            .eq('player_id', p.id)
+        }
+      }
 
       setTeamId(team.id)
       setHasTeam(true)
