@@ -29,7 +29,7 @@ export default function DashboardPage() {
 
       const { data: teamData, error: teamErr } = await supabase
         .from('fantasy_teams')
-        .select('id, name, locked, fantasy_team_players(players(*))')
+        .select('id, name, locked, fantasy_team_players(is_captain, players(*))')
         .eq('user_id', session.user.id)
         .single()
 
@@ -37,8 +37,14 @@ export default function DashboardPage() {
 
       if (teamData) {
         setTeam(teamData)
-        const teamPlayers = teamData.fantasy_team_players.map(r => r.players).filter(Boolean)
+        const ftpRows     = teamData.fantasy_team_players
+        const teamPlayers = ftpRows.map(r => r.players).filter(Boolean)
         setPlayers(teamPlayers)
+
+        // Which player is captain IN THIS TEAM specifically
+        const captainIds = new Set(
+          ftpRows.filter(r => r.is_captain).map(r => r.players?.id).filter(Boolean)
+        )
 
         // Fetch ALL points for this team's players in ONE query
         const playerIds = teamPlayers.map(p => p.id)
@@ -48,16 +54,14 @@ export default function DashboardPage() {
             .select('player_id, points')
             .in('player_id', playerIds)
 
-          if (ptsErr) {
-            console.error('player_points fetch error:', ptsErr)
-          } else {
-            console.log('player_points rows fetched:', pointsRows?.length, pointsRows)
-          }
+          if (ptsErr) console.error('player_points fetch error:', ptsErr)
 
-          // Sum per player
+          // Sum per player — apply 2x only for this team's captain
           const map = {}
           for (const row of (pointsRows || [])) {
-            map[row.player_id] = (map[row.player_id] || 0) + (row.points || 0)
+            const base = row.points || 0
+            const pts  = captainIds.has(row.player_id) ? base * 2 : base
+            map[row.player_id] = (map[row.player_id] || 0) + pts
           }
           setPointsMap(map)
         }
