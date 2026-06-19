@@ -109,7 +109,7 @@ export default function DashboardPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {players.map(player => (
-                <PlayerPointsCard key={player.id} player={player} joinedAt={player.joinedAt} />
+                <PlayerPointsCard key={player.id} player={player} />
               ))}
             </div>
           </>
@@ -126,41 +126,20 @@ export default function DashboardPage() {
   )
 }
 
-function PlayerPointsCard({ player, joinedAt }) {
+function PlayerPointsCard({ player }) {
   const [pts, setPts] = useState(null)
 
   useEffect(() => {
-    async function fetchPoints() {
-      const { data: pointsData } = await supabase
-        .from('player_points')
-        .select('points, api_fixture_id')
-        .eq('player_id', player.id)
-
-      if (!pointsData?.length) { setPts(0); return }
-
-      const { data: statsData } = await supabase
-        .from('player_match_stats')
-        .select('api_fixture_id, match_date')
-        .eq('player_id', player.id)
-
-      const statsMap = Object.fromEntries(
-        (statsData || []).map(s => [String(s.api_fixture_id), s.match_date])
-      )
-
-      const joinedDate = joinedAt ? joinedAt.split('T')[0] : null
-
-      const total = pointsData.reduce((sum, r) => {
-        const matchDate = statsMap[String(r.api_fixture_id)]
-        if (!matchDate || !joinedDate || matchDate >= joinedDate) {
-          return sum + r.points
-        }
-        return sum
-      }, 0)
-
-      setPts(total)
-    }
-    fetchPoints()
-  }, [player.id, joinedAt])
+    supabase
+      .from('player_points')
+      .select('points')
+      .eq('player_id', player.id)
+      .then(({ data, error }) => {
+        if (error) console.error('points fetch error:', error)
+        const total = (data || []).reduce((s, r) => s + r.points, 0)
+        setPts(total)
+      })
+  }, [player.id])
 
   return (
     <div className={`border rounded-xl p-4 ${POSITION_COLORS[player.position]}`}>
