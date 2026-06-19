@@ -172,20 +172,30 @@ export default async function handler(req, res) {
     if (batch1.error) return res.status(500).json({ error: 'Failed to load players: ' + batch1.error.message })
     const dbPlayers = [...(batch1.data || []), ...(batch2.data || [])]
 
+    // Pre-load all captain player_ids ONCE — lets us apply 2x in a single pass,
+    // no second pass means no risk of Vercel timeout cutting off the captain step
+    const { data: captainRows } = await supabase
+      .from('fantasy_team_players')
+      .select('player_id')
+      .eq('is_captain', true)
+    const captainIds = new Set((captainRows || []).map(r => r.player_id))
+
     const results = []
 
     for (const fixtureId of toSync) {
       try {
-        const statsData   = await apiFetch(`/fixtures/players?fixture=${fixtureId}`)
-        const teams       = statsData.response || []
-        const fixtureData = await apiFetch(`/fixtures?id=${fixtureId}`)
-        const fixture     = fixtureData.response?.[0]
+        // Fetch both in parallel — removes one sequential API round trip
+        const [statsData, fixtureData] = await Promise.all([
+          apiFetch(`/fixtures/players?fixture=${fixtureId}`),
+          apiFetch(`/fixtures?id=${fixtureId}`),
+        ])
+        const teams   = statsData.response || []
+        const fixture = fixtureData.response?.[0]
 
         const homeScore  = fixture?.goals?.home ?? 0
         const awayScore  = fixture?.goals?.away ?? 0
         const homeTeamId = fixture?.teams?.home?.id
 
-        // FIX: extract match date from the API fixture object (YYYY-MM-DD)
         const matchDate = fixture?.fixture?.date
           ? fixture.fixture.date.split('T')[0]
           : null
@@ -195,9 +205,9 @@ export default async function handler(req, res) {
         let upsertErrors     = []
 
         for (const team of teams) {
-          const isHome      = team.team.id === homeTeamId
+          const isHome       = team.team.id === homeTeamId
           const teamConceded = isHome ? awayScore : homeScore
-          const cleanSheet  = teamConceded === 0
+          const cleanSheet   = teamConceded === 0
 
           const apiCountry     = team.team.name
           const dbCountry      = COUNTRY_MAP[apiCountry] || apiCountry
@@ -232,7 +242,6 @@ export default async function handler(req, res) {
               continue
             }
 
-            // FIX: include match_date so the leaderboard date-gate works
             const { error } = await supabase
               .from('player_match_stats')
               .upsert({
@@ -250,29 +259,15 @@ export default async function handler(req, res) {
             if (error) {
               upsertErrors.push(`${dbPlayer.name}: ${error.message}`)
             } else {
+              // Captain 2x applied in the SAME call — no second pass needed
+              const isCaptain = captainIds.has(dbPlayer.id)
               await supabase.rpc('calculate_fantasy_points', {
                 p_player_id:  dbPlayer.id,
                 p_fixture_id: fixtureId,
-                p_is_captain: false,
+                p_is_captain: isCaptain,
               })
               matchedCount++
             }
-          }
-        }
-
-        const { data: captainRows } = await supabase
-          .from('fantasy_team_players')
-          .select('player_id')
-          .eq('is_captain', true)
-
-        if (captainRows?.length) {
-          const captainPlayerIds = captainRows.map(r => r.player_id)
-          for (const cpId of captainPlayerIds) {
-            await supabase.rpc('calculate_fantasy_points', {
-              p_player_id:  cpId,
-              p_fixture_id: fixtureId,
-              p_is_captain: true,
-            })
           }
         }
 
